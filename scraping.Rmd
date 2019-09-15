@@ -1,0 +1,165 @@
+---
+title: "scraping"
+output: html_document
+---
+```{r}
+#call the rvest and tidyverse libraries
+library(rvest)
+library(tidyverse)
+
+#read in html from page
+wdw_wiki_html <- read_html("https://en.wikipedia.org/wiki/Walt_Disney_World")
+
+#select and convert html table to data frame
+wdw_event_timeline <- wdw_wiki_html %>%
+  #select first table with class "wikitable"  
+  html_node("table.wikitable") %>%
+  #convert html node to character string
+  as.character() %>%
+  #replace all break tags with new lines for formatting
+  str_replace_all("<br>", "\n") %>%
+  #read back into html
+  read_html() %>%
+  #parse html table into data frame
+  html_table() %>% 
+  #get first result in list
+  .[[1]]
+
+#convert column names to lowercase
+names(wdw_event_timeline) <- names(wdw_event_timeline) %>% tolower()
+```
+
+```{r}
+#read in html from page
+wdw_prices_article_html <- read_html("https://www.gobankingrates.com/saving-money/entertainment/how-much-disney-world-cost-year-born/")
+
+#format historical prices
+wdw_prices_historical <- wdw_prices_article_html %>% 
+  #get all h2 elements
+  html_nodes("h2") %>% 
+  #convert to list of character values (ie: "1983: $17")
+  html_text() %>% 
+  #convert to data frame
+  data.frame(year = .) %>% 
+  #separate the year and price into two columns based on the colon and space
+  separate(year,c("year","historical_price"),sep=": ") %>% 
+  #remove dollar sign
+  mutate(historical_price = str_replace(historical_price,"\\$", "")) %>% 
+  #convert both columns to numeric
+  mutate_all(as.numeric) %>% 
+  #filter NA rows
+  filter(!is.na(year))
+
+#format adjusted prices
+wdw_prices_adjusted <- wdw_prices_article_html %>% 
+  #extract all li elements containing the relevant text
+  html_nodes(xpath = "//li[strong[contains(text(),'Cost adjusted for 2019 inflation:')]]") %>% 
+  #convert to list of character values
+  html_text() %>% 
+  #convert to data frame
+  data.frame(adjusted_price = .) %>% 
+  #remove preceding text
+  mutate(adjusted_price = str_replace(adjusted_price,"Cost adjusted for 2019 inflation\\:", ""))  %>% 
+  #remove whitespace
+  mutate(adjusted_price = str_replace(adjusted_price,"\u00A0", ""))  %>% 
+  #remove dollar sign
+  mutate(adjusted_price = str_replace(adjusted_price,"\\$", ""))  %>% 
+  #convert column to numeric
+  mutate(adjusted_price = as.numeric(adjusted_price))
+
+#combine two pricing data frames
+wdw_prices_combined <- wdw_prices_historical %>% 
+  #add wdw_prices_adjusted as a column
+  cbind(wdw_prices_adjusted) %>% 
+  #if 2019, use "historical" price as adjusted
+  mutate(adjusted_price = ifelse(year == 2019,historical_price,adjusted_price))
+```
+
+```{r}
+#visualize
+wdw_event_timeline %>% 
+  #join two data frames together
+  left_join(wdw_prices_combined) %>% 
+  #only keep first line of text
+  mutate(event = gsub("\n(.*)","",event)) %>% 
+  #concatenate year and event
+  mutate(event = paste0(year,": ",event)) %>% 
+  #create column for annotated years
+  mutate(year_annotate = ifelse(year %in% c(1965,1967,1971,1982,1989,1998,2008,2019),year,NA)) %>% 
+  #create column for annotated events
+  mutate(event_filtered = ifelse(!is.na(year_annotate),event,NA)) %>% 
+  
+  ggplot() +
+  #trend line of adjusted price
+  geom_line(aes(year,adjusted_price),size = .7,color = "darkgrey") +
+  #add label, adjust position depending on year, color based on year
+  geom_label(aes(ifelse(year_annotate > 2000,year_annotate + 3.25,year_annotate+3.75),
+                 ifelse(adjusted_price > 75,adjusted_price - 6.5,adjusted_price-3),
+                 label = str_wrap(event_filtered, 20),color = as.factor(year_annotate))
+             ,size = 1.75
+             ) +
+  #add point, color based on year
+  geom_point(aes(year_annotate,adjusted_price,color = as.factor(year_annotate)),size = 3) +
+  #show dollar sign in y axis
+  scale_y_continuous(labels = scales::dollar) +
+  #show every decade
+  scale_x_continuous(breaks = seq(1970,2020,by = 10)) +
+  #adjust axis titles
+  labs(x = "Year",
+       y  = "WDW Ticket Price (adjusted for inflation)") +
+  #set theme and adjust elements
+  theme_minimal() +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank())
+```
+
+```{r}
+#call the gtrendsR package
+library(gtrendsR)
+#download trend data for the “Walt Disney World Resort” topic (%2Fm%2F09b1k) in the United States, for all time (back to 2004), and only download interest trend data
+wdw_gtrends <- gtrends("%2Fm%2F09b1k","US",time = "all",onlyInterest = T)
+wdw_gtrends <- wdw_gtrends$interest_over_time
+
+#preview data
+wdw_gtrends %>% 
+  select(date,hits) %>% 
+  head(5)
+```
+
+```{r}
+#call the quantmod package
+library(quantmod)
+#define stock symbol (DIS) and data source (Yahoo Finance)
+getSymbols("DIS",src = "yahoo")
+#extract data to data frame and convert row names (date) to column
+DIS <- as.data.frame(DIS) %>% 
+  rownames_to_column("date")
+
+#preview
+DIS %>% 
+  select(date,DIS.Close) %>% 
+  head(5)
+```
+
+```{r}
+#call the rtweet package
+library(rtweet)
+
+#define API token credentials (see this guide on Twitter API authentication)
+source('create_twitter_token.R')
+# create_token(
+#   app = "app",
+#   consumer_key = "consumer_key",
+#   consumer_secret = "consumer_secret",
+#   access_token = "access_token",
+#   access_secret = "access_secret")
+
+#define handle and get max tweets allowed in call
+wdw_twitter_timeline <- get_timeline('WaltDisneyWorld',n = 3200)
+
+#preview
+wdw_twitter_timeline %>% 
+  select(created_at,text) %>% 
+  head(5)
+```
