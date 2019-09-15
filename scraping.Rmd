@@ -1,7 +1,3 @@
----
-title: "scraping"
-output: html_document
----
 ```{r}
 #call the rvest and tidyverse libraries
 library(rvest)
