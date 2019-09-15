@@ -73,7 +73,7 @@ wdw_prices_combined <- wdw_prices_historical %>%
 
 ```{r}
 #visualize
-wdw_event_timeline %>% 
+g <- wdw_event_timeline %>% 
   #join two data frames together
   left_join(wdw_prices_combined) %>% 
   #only keep first line of text
@@ -108,6 +108,9 @@ wdw_event_timeline %>%
   theme(legend.position = "none",
         panel.grid.minor = element_blank(),
         panel.grid.major.x = element_blank())
+
+#save
+ggsave("wdw_viz.png",g,height = 5, width = 8.5)
 ```
 
 ```{r}
