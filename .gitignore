@@ -11,6 +11,9 @@ create_twitter_token.R
 .Rhistory
 .Rapp.history
 
+*.DS_Store
+*.gitattributes
+
 # Session Data files
 .RData
 
